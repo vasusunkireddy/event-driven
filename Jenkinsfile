@@ -1,41 +1,66 @@
 pipeline {
   agent any
+  options { skipDefaultCheckout(true); timestamps() }
 
   environment {
-    APP_NAME = "eventapp"
-    REPO_URL = "https://github.com/vasusunkireddy/event-driven.git"
-    WSL_EXE  = "C:\\Windows\\System32\\wsl.exe"
+    APP_NAME = 'eventapp'
+    REPO_URL = 'https://github.com/vasusunkireddy/event-driven.git'
   }
 
   stages {
-    stage("Checkout") {
-      steps { checkout scm }
+    stage('Checkout') {
+      steps {
+        checkout scm
+        script { echo "GIT_COMMIT = ${env.GIT_COMMIT}" }
+      }
     }
 
-    stage("Build (Windows)") {
+    stage('Build (Windows)') {
       steps {
-        dir("app") {
-          bat "node -v"
-          bat "npm -v"
-          bat "npm ci || npm install"
+        dir('app') {
+          bat 'node -v'
+          bat 'npm -v'
+          // prefer clean install; fallback to install if no lockfile
+          bat 'npm ci || npm install'
         }
       }
     }
 
-    stage("Deploy via Ansible (WSL)") {
+    // --- WSL deploy via pure CMD/BAT, safe quoting & path handling ---
+    stage('Deploy via Ansible (WSL)') {
       steps {
-        script {
-          // current commit SHA
-          def commit = bat(returnStdout: true, script: "git rev-parse HEAD").trim()
-          // convert Jenkins workspace to Linux path once
-          def wsLinux = bat(returnStdout: true, script: "${env.WSL_EXE} wslpath -a \"%WORKSPACE%\"").trim()
+        bat '''
+        @echo off
+        setlocal enabledelayedexpansion
 
-          // run ansible-playbook from WSL using Linux paths
-          bat """
-${env.WSL_EXE} bash -lc "ANSIBLE_NOCOWS=1 ansible-playbook -i '${wsLinux}/ansible/hosts.ini' '${wsLinux}/ansible/deploy.yml' --extra-vars 'app_name=${APP_NAME} repo_url=${REPO_URL} git_version=${commit}'"
-"""
-        }
+        rem 1) Convert Windows %WORKSPACE% -> WSL path (/mnt/c/...)
+        for /f "delims=" %%W in ('%WINDIR%\\System32\\wsl.exe wslpath -a "%WORKSPACE%"') do set "WSL_WORK=%%W"
+
+        if not defined WSL_WORK (
+          echo [ERROR] Failed to convert WORKSPACE to WSL path
+          exit /b 1
+        )
+
+        echo WSL workspace: %WSL_WORK%
+        echo Commit: %GIT_COMMIT%
+
+        rem 2) Build extra-vars as one flat string (no nested commands)
+        set "EXTRA_VARS=app_name=%APP_NAME% repo_url=%REPO_URL% git_version=%GIT_COMMIT%"
+
+        rem 3) Run ansible-playbook inside WSL; use relative paths after cd
+        "%WINDIR%\\System32\\wsl.exe" bash -lc "cd \\"%WSL_WORK%\\" && ANSIBLE_NOCOWS=1 ansible-playbook -i ansible/hosts.ini ansible/deploy.yml --extra-vars '%EXTRA_VARS%'"
+        if errorlevel 1 exit /b 1
+        '''
       }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'ansible/**/*.yml, ansible/**/*.ini, app/**/package*.json',
+                        allowEmptyArchive: true,
+                        onlyIfSuccessful: false
+      cleanWs deleteDirs: true, notFailBuild: true
     }
   }
 }
