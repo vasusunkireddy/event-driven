@@ -2,14 +2,25 @@
 - name: Deploy Node app to WSL with PM2
   hosts: localhost
   become: yes
+
   vars:
     app_name: "eventapp"
     app_dir: "/opt/eventapp"
     repo_url: "https://github.com/vasusunkireddy/event-driven.git"
-    git_version: "main"
+    # Jenkins passes --extra-vars git_version=..., but if it's missing/null use main
+    git_version: "{{ git_version | default('main', true) }}"
+
+  pre_tasks:
+    - name: Show deploy inputs
+      debug:
+        msg:
+          - "app_name  = {{ app_name }}"
+          - "app_dir   = {{ app_dir }}"
+          - "repo_url  = {{ repo_url }}"
+          - "git_ref   = {{ git_version }}"
 
   tasks:
-    - name: Ensure base packages
+    - name: Ensure base packages (git, nodejs, npm, etc.)
       apt:
         name:
           - curl
@@ -22,9 +33,10 @@
         update_cache: yes
 
     - name: Install PM2 globally
-      npm:
+      community.general.npm:
         name: pm2
         global: yes
+        state: present
 
     - name: Create app directory
       file:
@@ -32,24 +44,40 @@
         state: directory
         mode: "0755"
 
-    - name: Pull repo to target version
+    - name: Checkout code at requested ref (defaults to main)
       git:
         repo: "{{ repo_url }}"
         dest: "{{ app_dir }}"
         version: "{{ git_version }}"
         force: yes
+        update: yes
 
-    - name: Install deps (npm ci if lockfile exists)
-      shell: |
-        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+    - name: Install dependencies (prefer npm ci)
       args:
         chdir: "{{ app_dir }}/app"
-
-    - name: Try startOrReload via ecosystem (idempotent)
       shell: |
-        pm2 startOrReload ecosystem.config.js || pm2 start server.js --name {{ app_name }}
+        if [ -f package-lock.json ]; then
+          npm ci
+        else
+          npm install
+        fi
+
+    - name: Start/Reload app with PM2 (ecosystem if present, fallback to npm start)
       args:
         chdir: "{{ app_dir }}/app"
+      shell: |
+        if [ -f ecosystem.config.cjs ]; then
+          pm2 startOrReload ecosystem.config.cjs --only {{ app_name }} || pm2 start ecosystem.config.cjs --only {{ app_name }}
+        elif [ -f ecosystem.config.js ]; then
+          pm2 startOrReload ecosystem.config.js --only {{ app_name }} || pm2 start ecosystem.config.js --only {{ app_name }}
+        else
+          pm2 start npm --name {{ app_name }} -- start || pm2 restart {{ app_name }}
+        fi
+        pm2 save
 
-    - name: Save PM2 process list
-      command: pm2 save
+    - name: Show PM2 status
+      shell: pm2 ls
+      register: pm2ls
+
+    - debug:
+        var: pm2ls.stdout
