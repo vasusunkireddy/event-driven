@@ -1,4 +1,4 @@
-﻿pipeline {
+pipeline {
   agent any
 
   environment {
@@ -24,13 +24,11 @@
     stage("Deploy via Ansible (WSL)") {
       steps {
         script {
-          // current commit SHA
           def commit = bat(returnStdout: true, script: "git rev-parse HEAD").trim()
 
-          // Symlink playbooks into WSL home with stable paths
           bat """
-wsl bash -lc "ln -sf \$(wslpath -a '%WORKSPACE%')/ansible/hosts.ini ~/event-hosts.ini && ln -sf \$(wslpath -a '%WORKSPACE%')/ansible/deploy.yml ~/deploy.yml"
-wsl bash -lc "ANSIBLE_NOCOWS=1 ansible-playbook -i ~/event-hosts.ini ~/deploy.yml --extra-vars 'app_name=${APP_NAME} repo_url=${REPO_URL} git_version=${commit}'"
+C:\\Windows\\System32\\wsl.exe bash -lc "ln -sf \$(wslpath -a '%WORKSPACE%')/ansible/hosts.ini ~/event-hosts.ini && ln -sf \$(wslpath -a '%WORKSPACE%')/ansible/deploy.yml ~/deploy.yml"
+C:\\Windows\\System32\\wsl.exe bash -lc "ANSIBLE_NOCOWS=1 ansible-playbook -i ~/event-hosts.ini ~/deploy.yml --extra-vars 'app_name=${APP_NAME} repo_url=${REPO_URL} git_version=${commit}'"
 """
         }
       }
