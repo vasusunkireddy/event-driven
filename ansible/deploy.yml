@@ -1,6 +1,6 @@
 ﻿---
 - name: Deploy Node app to WSL with PM2
-  hosts: web
+  hosts: localhost
   become: yes
   vars:
     app_name: "eventapp"
