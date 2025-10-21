@@ -48,8 +48,8 @@ pipeline {
         set "EXTRA_VARS=app_name=%APP_NAME% repo_url=%REPO_URL% git_version=%GIT_COMMIT%"
 
         rem 3) Run ansible-playbook inside WSL; use relative paths after cd
-        "%WINDIR%\\System32\\wsl.exe" bash -lc "cd \\"%WSL_WORK%\\" && ANSIBLE_NOCOWS=1 ansible-playbook -i ansible/hosts.ini ansible/deploy.yml --extra-vars '%EXTRA_VARS%'"
-        if errorlevel 1 exit /b 1
+        "%WINDIR%\\System32\\wsl.exe" bash -lc "cd \"%WSL_WORK%\" && ANSIBLE_NOCOWS=1 ansible-playbook ansible/deploy.yml --extra-vars '%EXTRA_VARS%' -vvv"
+
         '''
       }
     }
