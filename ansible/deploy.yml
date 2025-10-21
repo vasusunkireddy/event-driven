@@ -1,0 +1,55 @@
+﻿---
+- name: Deploy Node app to WSL with PM2
+  hosts: web
+  become: yes
+  vars:
+    app_name: "eventapp"
+    app_dir: "/opt/eventapp"
+    repo_url: "https://github.com/vasusunkireddy/event-driven.git"
+    git_version: "main"
+
+  tasks:
+    - name: Ensure base packages
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - git
+          - nodejs
+          - npm
+        state: present
+        update_cache: yes
+
+    - name: Install PM2 globally
+      npm:
+        name: pm2
+        global: yes
+
+    - name: Create app directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Pull repo to target version
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ git_version }}"
+        force: yes
+
+    - name: Install deps (npm ci if lockfile exists)
+      shell: |
+        if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      args:
+        chdir: "{{ app_dir }}/app"
+
+    - name: Try startOrReload via ecosystem (idempotent)
+      shell: |
+        pm2 startOrReload ecosystem.config.js || pm2 start server.js --name {{ app_name }}
+      args:
+        chdir: "{{ app_dir }}/app"
+
+    - name: Save PM2 process list
+      command: pm2 save
