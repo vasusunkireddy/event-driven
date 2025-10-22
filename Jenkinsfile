@@ -5,13 +5,18 @@ pipeline {
   environment {
     APP_NAME = 'eventapp'
     REPO_URL = 'https://github.com/vasusunkireddy/event-driven.git'
+    WSL_EXE  = 'C:\\Windows\\System32\\wsl.exe'
   }
 
   stages {
     stage('Checkout') {
       steps {
         checkout scm
-        script { echo "GIT_COMMIT = ${env.GIT_COMMIT}" }
+        script {
+          // Resolve the actual commit SHA after checkout
+          env.GIT_COMMIT = bat(returnStdout: true, script: 'git rev-parse HEAD').trim()
+          echo "GIT_COMMIT = ${env.GIT_COMMIT}"
+        }
       }
     }
 
@@ -20,37 +25,26 @@ pipeline {
         dir('app') {
           bat 'node -v'
           bat 'npm -v'
-          // prefer clean install; fallback to install if no lockfile
           bat 'npm ci || npm install'
         }
       }
     }
 
-    // --- WSL deploy via pure CMD/BAT, safe quoting & path handling ---
     stage('Deploy via Ansible (WSL)') {
       steps {
-        bat '''
-        @echo off
-        setlocal enabledelayedexpansion
+        script {
+          // Convert Windows %WORKSPACE% -> /mnt/c/... for WSL
+          def wsLinux = bat(returnStdout: true,
+            script: "${env.WSL_EXE} wslpath -a \"%WORKSPACE%\""
+          ).trim()
 
-        rem 1) Convert Windows %WORKSPACE% -> WSL path (/mnt/c/...)
-        for /f "delims=" %%W in ('%WINDIR%\\System32\\wsl.exe wslpath -a "%WORKSPACE%"') do set "WSL_WORK=%%W"
-
-        if not defined WSL_WORK (
-          echo [ERROR] Failed to convert WORKSPACE to WSL path
-          exit /b 1
-        )
-
-        echo WSL workspace: %WSL_WORK%
-        echo Commit: %GIT_COMMIT%
-
-        rem 2) Build extra-vars as one flat string (no nested commands)
-        set "EXTRA_VARS=app_name=%APP_NAME% repo_url=%REPO_URL% git_version=%GIT_COMMIT%"
-
-        rem 3) Run ansible-playbook inside WSL; use relative paths after cd
-        "%WINDIR%\\System32\\wsl.exe" bash -lc "cd \\"%WSL_WORK%\\" && ANSIBLE_NOCOWS=1 ansible-playbook -i ansible/hosts.ini ansible/deploy.yml --extra-vars '%EXTRA_VARS%'"
-        if errorlevel 1 exit /b 1
-        '''
+          // Run Ansible against localhost (no inventory file needed)
+          bat """
+${env.WSL_EXE} bash -lc "cd '${wsLinux}' && \
+  ANSIBLE_NOCOWS=1 ansible-playbook -i 'localhost,' -c local ansible/deploy.yml \
+  --extra-vars 'app_name=${env.APP_NAME} repo_url=${env.REPO_URL} git_version=${env.GIT_COMMIT}'"
+"""
+        }
       }
     }
   }
