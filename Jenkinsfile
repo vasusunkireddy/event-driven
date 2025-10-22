@@ -13,8 +13,11 @@ pipeline {
       steps {
         checkout scm
         script {
-          env.GIT_COMMIT = bat(returnStdout: true, script: 'git rev-parse HEAD').trim()
-          echo "✅ Checked out commit: ${env.GIT_COMMIT}"
+          // Get raw output (CMD prints the command too). Keep only the last line (the SHA).
+          def raw = bat(returnStdout: true, script: 'git rev-parse HEAD').trim()
+          def lines = raw.readLines().findAll { it?.trim() }
+          env.GIT_COMMIT = lines[-1].trim()
+          echo "Checked out commit: ${env.GIT_COMMIT}"
         }
       }
     }
@@ -32,19 +35,19 @@ pipeline {
     stage('Deploy via Ansible (WSL)') {
       steps {
         script {
-          // Convert workspace path safely
+          // Convert WORKSPACE to Linux path safely (write/read file to avoid nested quoting)
           bat "\"${env.WSL_EXE}\" wslpath -a \"%WORKSPACE%\" > wslloc.txt"
           def wsLinux = readFile('wslloc.txt').trim()
 
-          echo "🐧 WSL workspace = ${wsLinux}"
-          echo "🔀 Commit = ${env.GIT_COMMIT}"
+          echo "WSL workspace: ${wsLinux}"
+          echo "Commit: ${env.GIT_COMMIT}"
 
-          // Build one clean command string
-          def ansibleCmd = "\"${env.WSL_EXE}\" bash -lc \"cd '${wsLinux}' && " +
-              "ANSIBLE_NOCOWS=1 ansible-playbook -i 'localhost,' -c local ansible/deploy.yml " +
-              "--extra-vars 'app_name=${env.APP_NAME} repo_url=${env.REPO_URL} git_version=${env.GIT_COMMIT}'\""
-
-          bat ansibleCmd
+          // Single WSL call. Ansible runs on localhost; no hosts.ini needed.
+          bat """
+\"${env.WSL_EXE}\" bash -lc "cd '${wsLinux}' && \\
+ANSIBLE_NOCOWS=1 ansible-playbook -i 'localhost,' -c local ansible/deploy.yml \\
+--extra-vars 'app_name=${env.APP_NAME} repo_url=${env.REPO_URL} git_version=${env.GIT_COMMIT}'"
+"""
         }
       }
     }
