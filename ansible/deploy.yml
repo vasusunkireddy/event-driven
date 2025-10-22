@@ -5,11 +5,17 @@
     app_name: "eventapp"
     app_dir: "{{ ansible_env.HOME }}/eventapp"
     repo_url: "https://github.com/vasusunkireddy/event-driven.git"
-    git_version: "main"   # Jenkins overrides with --extra-vars
+    git_version: "main"
   tasks:
     - name: Ensure base packages
       apt:
-        name: [curl, ca-certificates, gnupg, git, nodejs, npm]
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - git
+          - nodejs
+          - npm
         state: present
         update_cache: yes
 
@@ -24,20 +30,20 @@
         state: directory
         mode: "0755"
 
-    - name: Pull repo to target version
+    - name: Pull latest repo
       git:
         repo: "{{ repo_url }}"
         dest: "{{ app_dir }}"
         version: "{{ git_version }}"
         force: yes
 
-    - name: Install deps
+    - name: Install dependencies
       shell: |
         if [ -f package-lock.json ]; then npm ci; else npm install; fi
       args:
         chdir: "{{ app_dir }}/app"
 
-    - name: Start or reload with PM2
+    - name: Start or reload app using PM2
       shell: |
         pm2 startOrReload ecosystem.config.js || pm2 start server.js --name {{ app_name }}
       args:
