@@ -13,7 +13,7 @@ pipeline {
       steps {
         checkout scm
         script {
-          // Resolve the actual commit SHA after checkout
+          // real commit SHA after checkout
           env.GIT_COMMIT = bat(returnStdout: true, script: 'git rev-parse HEAD').trim()
           echo "GIT_COMMIT = ${env.GIT_COMMIT}"
         }
@@ -33,17 +33,19 @@ pipeline {
     stage('Deploy via Ansible (WSL)') {
       steps {
         script {
-          // Convert Windows %WORKSPACE% -> /mnt/c/... for WSL
-          def wsLinux = bat(returnStdout: true,
-            script: "${env.WSL_EXE} wslpath -a \"%WORKSPACE%\""
+          // Convert %WORKSPACE% (Windows) -> /mnt/c/... (Linux)
+          def wsLinux = bat(
+            returnStdout: true,
+            script: "\"${env.WSL_EXE}\" wslpath -a \"%WORKSPACE%\""
           ).trim()
 
-          // Run Ansible against localhost (no inventory file needed)
-          bat """
-${env.WSL_EXE} bash -lc "cd '${wsLinux}' && \
-  ANSIBLE_NOCOWS=1 ansible-playbook -i 'localhost,' -c local ansible/deploy.yml \
-  --extra-vars 'app_name=${env.APP_NAME} repo_url=${env.REPO_URL} git_version=${env.GIT_COMMIT}'"
-"""
+          // Single-line call to avoid heredoc/quote hell
+          def cmd = "\"${env.WSL_EXE}\" bash -lc \"cd '${wsLinux}' && " +
+                    "ANSIBLE_NOCOWS=1 ansible-playbook -i 'localhost,' -c local ansible/deploy.yml " +
+                    "--extra-vars 'app_name=${env.APP_NAME} repo_url=${env.REPO_URL} git_version=${env.GIT_COMMIT}'\""
+
+          echo "WSL workspace: ${wsLinux}"
+          bat cmd
         }
       }
     }

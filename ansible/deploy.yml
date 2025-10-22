@@ -5,7 +5,7 @@
     app_name: "eventapp"
     app_dir: "{{ ansible_env.HOME }}/eventapp"
     repo_url: "https://github.com/vasusunkireddy/event-driven.git"
-    git_version: "main"
+    git_version: "main"   # Jenkins overrides with --extra-vars
   tasks:
     - name: Ensure base packages
       apt:
@@ -34,12 +34,14 @@
     - name: Install deps
       shell: |
         if [ -f package-lock.json ]; then npm ci; else npm install; fi
-      args: { chdir: "{{ app_dir }}/app" }
+      args:
+        chdir: "{{ app_dir }}/app"
 
     - name: Start or reload with PM2
       shell: |
         pm2 startOrReload ecosystem.config.js || pm2 start server.js --name {{ app_name }}
-      args: { chdir: "{{ app_dir }}/app" }
+      args:
+        chdir: "{{ app_dir }}/app"
 
     - name: Save PM2 process list
       command: pm2 save
